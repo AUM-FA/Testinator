@@ -7,6 +7,8 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Testinator">
   <title>Testinator</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
   <style>
     :root {
       --blau: #1a4f8a;
@@ -1230,7 +1232,7 @@ function pad(v, len) {
 }
 
 // ══════════════════════════════════════════
-// EXPORT PDF
+// EXPORT PDF (jsPDF)
 // ══════════════════════════════════════════
 function exportPdf() {
   if (!aktSession) return;
@@ -1239,100 +1241,182 @@ function exportPdf() {
   var ee = s.eintraege;
   var m = s.modus;
 
-  // Deckblatt
-  var h = '<div class="pdf-cover">';
-  h += '<div class="pdf-cover-logo">Testinator</div>';
-  h += '<div class="pdf-cover-sub">Beobachtungsprotokoll · Betriebsprüfung</div>';
-  h += '<div class="pdf-cover-line"></div>';
-  h += '<div class="pdf-cover-info">';
-  h += '<strong>Betriebsart:</strong> '+modusLabel(m)+'<br>';
-  h += '<strong>Datum:</strong> '+s.datum+'<br>';
-  if(s.startzeit) h += '<strong>Beginn:</strong> '+s.startzeit+(s.startdatum?' ('+s.startdatum+')':'')+'<br>';
-  if(s.endzeit) {
-    var a=s.startzeit.split(':').map(Number),b=s.endzeit.split(':').map(Number);
-    var min=(b[0]*60+b[1])-(a[0]*60+a[1]);
-    h += '<strong>Ende:</strong> '+s.endzeit+' (Dauer: '+min+' Min.)<br>';
+  var doc = new jspdf.jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  var blau = [26, 79, 138];
+  var grau = [100, 100, 100];
+  var hellgrau = [240, 244, 248];
+  var W = 210;
+  var rand = 15;
+  var y = 20;
+
+  // ── DECKBLATT ──
+  doc.setFillColor(26, 79, 138);
+  doc.rect(0, 0, W, 60, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(28);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Testinator', rand, 30);
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'normal');
+  doc.text('Beobachtungsprotokoll · Betriebsprüfung', rand, 42);
+  doc.text(modusLabel(m) + ' · ' + s.datum, rand, 52);
+
+  y = 75;
+  doc.setTextColor(0, 0, 0);
+
+  // Meta-Infos
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(...blau);
+  doc.text('Beobachtungszeitraum', rand, y); y += 7;
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(0, 0, 0);
+  doc.setFontSize(10);
+  if (s.startzeit) { doc.text('Beginn: ' + s.startzeit, rand, y); y += 6; }
+  if (s.endzeit) {
+    var a = s.startzeit.split(':').map(Number), b = s.endzeit.split(':').map(Number);
+    var min = (b[0]*60+b[1]) - (a[0]*60+a[1]);
+    doc.text('Ende: ' + s.endzeit + ' (Dauer: ' + min + ' Min.)', rand, y); y += 6;
   }
-  h += '<strong>Einträge:</strong> '+ee.filter(function(e){return !e.lief&&!e.eigen;}).length+'<br>';
-  var mb=ee.filter(function(e){return e.betrag;}); if(mb.length) h += '<strong>Ø Bon:</strong> '+(mb.reduce(function(a,e){return a+e.betrag;},0)/mb.length).toFixed(2)+' €<br>';
-  h += '</div>';
-  h += '<div class="pdf-cover-warn"><strong>⚠️ Hinweis zum Steuergeheimnis</strong>Diese App darf nur zur anonymen Erfassung von Beobachtungsdaten genutzt werden. Keine betriebs- oder personenbezogenen Angaben eingeben (z.B. Betriebsname, Adresse, Steuernummer) – § 30 AO beachten.</div>';
-  h += '<div class="pdf-cover-warn2"><strong>⏱️ Hinweis zur Datenspeicherung</strong>Alle erfassten Daten werden nach 10 Tagen automatisch gelöscht.</div>';
-  h += '</div>';
-
-  // Inhalt
-  h += '<div class="pdf-page">';
-
-  if(Object.keys(ab).length) {
-    h += '<div class="pdf-section"><div class="pdf-section-title">Zum Betrieb</div><div class="pdf-ab-grid">';
-    var abFields = [
-      ['Öffnungszeiten',ab.oeffnung],['Schließtage',ab.schliess],
-      ['Tische innen',(ab.ti?ab.ti+' Tische':'')+(ab.pi?' / '+ab.pi+' Plätze':'')],
-      ['Tische außen',(ab.ta?ab.ta+' Tische':'')+(ab.pa?' / '+ab.pa+' Plätze':'')],
-      ['Besetzt beim Betreten',ab.besetzt],['Personal Service',ab.service],
-      ['Personal Küche',ab.kueche],['Kassengeräte',ab.kassen],
-      ['Tablets/Mobil',ab.tablets],['Drucker',ab.drucker],
-      ['Kassenhersteller',ab.hersteller],['EC-Verbindung',ab.ec],
-      ['Bestellerfassung',ab.best],['Lieferdienste',ab.liefer],
-      ['Vorab anwesend',ab.vorab],['Notiz',ab.notiz]
-    ];
-    abFields.forEach(function(f){
-      if(f[1]) h += '<div class="pdf-ab-row"><span class="pdf-ab-lbl">'+f[0]+':</span><span class="pdf-ab-val">'+escHtml(String(f[1]))+'</span></div>';
-    });
-    h += '</div></div>';
-  }
-
-  h += '<div class="pdf-section"><div class="pdf-section-title">Beobachtungen</div><table>';
-
-  if(m==='imbiss') {
-    h += '<tr><th>Bestellzeit</th><th>Pers.</th><th>Speisen</th><th>Getränke</th><th>To-go/Vor Ort</th><th>Betrag</th><th>Bon</th><th>Notiz</th></tr>';
-    ee.forEach(function(e){
-      h += '<tr><td>'+e.zeit+'</td><td>'+e.personen+'</td><td>'+(e.speisen||'–')+'</td><td>'+(e.getraenke||'–')+'</td><td>'+(e.togo||'–')+'</td><td>'+(e.betrag?e.betrag.toFixed(2)+' €':'–')+'</td><td>'+(e.bon||'–')+'</td><td>'+escHtml(e.notiz||'')+'</td></tr>';
-    });
-  } else if(m==='restaurant') {
-    h += '<tr><th>Bestellzeit</th><th>Bezahlzeit</th><th>Tisch</th><th>P.</th><th>Sp.</th><th>Getr.</th><th>Betrag</th><th>Zahlart</th><th>Split</th><th>Bon</th></tr>';
-    ee.forEach(function(e){
-      if(e.lief){
-        h += '<tr><td>'+e.zeit+'</td><td>–</td><td>🛵 '+escHtml(e.dienst||'')+'</td><td colspan="4">'+e.anzahl+' Bestellung(en) · Kasse: '+(e.kasse||'–')+'</td><td>–</td><td>–</td><td>–</td></tr>';
-      } else {
-        h += '<tr><td>'+e.zeit+'</td><td>'+(e.bezzeit||'–')+'</td><td>'+escHtml(e.tisch||e.eigen?'[Eigener Tisch]':'–')+'</td><td>'+e.personen+'</td><td>'+(e.speisen||'–')+'</td><td>'+(e.getraenke||'–')+'</td><td>'+(e.betrag?e.betrag.toFixed(2)+' €':'–')+'</td><td>'+(e.zahlart||'–')+'</td><td>'+(e.split||'–')+'</td><td>'+(e.bon||'–')+'</td></tr>';
-      }
-    });
-  } else if(m==='friseur') {
-    h += '<tr><th>Eintrittszeit</th><th>Bezahlzeit</th><th>Typ</th><th>Leistung</th><th>Betrag</th><th>Zahlart</th><th>Bon</th><th>Notiz</th></tr>';
-    ee.forEach(function(e){
-      h += '<tr><td>'+e.zeit+'</td><td>'+(e.bezzeit||'–')+'</td><td>'+(e.typ||'–')+'</td><td>'+escHtml(e.leistung||'–')+'</td><td>'+(e.betrag?e.betrag.toFixed(2)+' €':'–')+'</td><td>'+(e.zahlart||'–')+'</td><td>'+(e.bon||'–')+'</td><td>'+escHtml(e.notiz||'')+'</td></tr>';
-    });
-  } else {
-    h += '<tr><th>Zeit</th><th>Personen</th><th>Bon</th><th>Notiz</th></tr>';
-    ee.forEach(function(e){
-      h += '<tr><td>'+e.zeit+'</td><td>'+e.personen+'</td><td>'+(e.bon||'–')+'</td><td>'+escHtml(e.notiz||'')+'</td></tr>';
-    });
-  }
-
-  h += '</table></div>';
-
   var sumK = ee.filter(function(e){return !e.lief&&!e.eigen;}).reduce(function(a,e){return a+e.personen;},0);
+  doc.text('Einträge: ' + ee.length + ' · Kunden: ' + sumK, rand, y); y += 6;
+  var mb = ee.filter(function(e){return e.betrag;});
+  if (mb.length) { doc.text('Ø Bon: ' + (mb.reduce(function(a,e){return a+e.betrag;},0)/mb.length).toFixed(2) + ' €', rand, y); y += 6; }
+
+  y += 5;
+
+  // Steuergeheimnis-Hinweise
+  doc.setFillColor(255, 248, 225);
+  doc.rect(rand, y, W - rand*2, 20, 'F');
+  doc.setDrawColor(243, 156, 18);
+  doc.rect(rand, y, W - rand*2, 20, 'S');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(90, 62, 0);
+  doc.text('⚠ Hinweis zum Steuergeheimnis', rand+3, y+6);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  var warn1 = doc.splitTextToSize('Diese App darf nur zur anonymen Erfassung von Beobachtungsdaten genutzt werden. Keine betriebs- oder personenbezogenen Angaben eingeben (z.B. Betriebsname, Adresse, Steuernummer) – § 30 AO beachten.', W - rand*2 - 6);
+  doc.text(warn1, rand+3, y+11);
+  y += 24;
+
+  doc.setFillColor(232, 245, 233);
+  doc.rect(rand, y, W - rand*2, 12, 'F');
+  doc.setDrawColor(39, 174, 96);
+  doc.rect(rand, y, W - rand*2, 12, 'S');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(26, 74, 42);
+  doc.text('⏱ Hinweis zur Datenspeicherung', rand+3, y+6);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.text('Alle erfassten Daten werden nach 10 Tagen automatisch gelöscht.', rand+3, y+10);
+  y += 16;
+
+  // ── AUFNAHMEBOGEN ──
+  if (Object.keys(ab).some(function(k){return ab[k];})) {
+    doc.addPage();
+    y = 20;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.setTextColor(...blau);
+    doc.text('Zum Betrieb', rand, y); y += 3;
+    doc.setDrawColor(...blau);
+    doc.setLineWidth(0.5);
+    doc.line(rand, y, W-rand, y); y += 7;
+
+    var abFelder = [
+      ['Öffnungszeiten', ab.oeffnung], ['Schließtage', ab.schliess],
+      ['Kassenart', ab.kassenart], ['Stationäre Geräte', ab.kassen],
+      ['Tablets/Handgeräte', ab.tablets], ['Laptops', ab.laptop],
+      ['Drucker', ab.drucker], ['Kassenhersteller', ab.hersteller],
+      ['EC-Verbindung', ab.ec], ['Bestellerfassung', ab.best],
+      ['Zahlungsarten', ab.zahlung], ['Lieferdienste', ab.liefer],
+      ['Personal Service', ab.service], ['Personal Küche', ab.kueche],
+      ['Tische innen', ab.ti ? ab.ti+' Tische / '+(ab.pi||'–')+' Plätze' : null],
+      ['Tische außen', ab.ta ? ab.ta+' Tische / '+(ab.pa||'–')+' Plätze' : null],
+      ['Besetzt beim Betreten', ab.besetzt], ['Vorab anwesend', ab.vorab],
+      ['Notiz', ab.notiz]
+    ];
+
+    doc.setFontSize(9);
+    var col = 0;
+    abFelder.forEach(function(f) {
+      if (!f[1]) return;
+      var x = col === 0 ? rand : W/2 + 2;
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(...grau);
+      doc.text(f[0] + ':', x, y);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(0, 0, 0);
+      doc.text(String(f[1]), x + 40, y);
+      col = col === 0 ? 1 : 0;
+      if (col === 0) y += 6;
+    });
+    if (col === 1) y += 6;
+  }
+
+  // ── BEOBACHTUNGEN ──
+  doc.addPage();
+  y = 20;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13);
+  doc.setTextColor(...blau);
+  doc.text('Beobachtungen', rand, y); y += 3;
+  doc.setDrawColor(...blau);
+  doc.setLineWidth(0.5);
+  doc.line(rand, y, W-rand, y); y += 7;
+
+  // Tabelle
+  var head = [], body = [];
+  if (m === 'imbiss') {
+    head = [['Zeit', 'P.', 'Sp.', 'Speisen-Art', 'Getr.', 'Getr.-Art', 'To-go', 'Betrag', 'Bon', 'Notiz']];
+    body = ee.map(function(e){ return [e.zeit, e.personen, e.speisen||0, e.spArt||'–', e.getraenke||0, e.gtArt||'–', e.togo||'–', e.betrag?e.betrag.toFixed(2)+' €':'–', e.bon||'–', e.notiz||'']; });
+  } else if (m === 'restaurant') {
+    head = [['Bestellzeit', 'Bezahlzeit', 'Tisch', 'P.', 'Sp.', 'Getr.', 'Betrag', 'Zahlart', 'Split', 'Bon']];
+    body = ee.map(function(e){
+      if (e.lief) return [e.zeit, '–', '🛵 '+e.dienst, e.anzahl+' Best.', '–', '–', '–', '–', 'Kasse: '+(e.kasse||'–'), '–'];
+      return [e.zeit, e.bezzeit||'–', e.tisch||(e.eigen?'Prüfer':'–'), e.personen, e.speisen||0, e.getraenke||0, e.betrag?e.betrag.toFixed(2)+' €':'–', e.zahlart||'–', e.split||'–', e.bon||'–'];
+    });
+  } else if (m === 'friseur') {
+    head = [['Eintrittszeit', 'Bezahlzeit', 'Typ', 'Leistung', 'Betrag', 'Zahlart', 'Bon', 'Notiz']];
+    body = ee.map(function(e){ return [e.zeit, e.bezzeit||'–', e.typ||'–', e.leistung||'–', e.betrag?e.betrag.toFixed(2)+' €':'–', e.zahlart||'–', e.bon||'–', e.notiz||'']; });
+  } else {
+    head = [['Zeit', 'Personen', 'Betrag', 'Zahlart', 'Bon', 'Notiz']];
+    body = ee.map(function(e){ return [e.zeit, e.personen, e.betrag?e.betrag.toFixed(2)+' €':'–', e.zahlart||'–', e.bon||'–', e.notiz||'']; });
+  }
+
+  doc.autoTable({
+    head: head, body: body,
+    startY: y,
+    margin: { left: rand, right: rand },
+    styles: { fontSize: 8, cellPadding: 2 },
+    headStyles: { fillColor: blau, textColor: 255, fontStyle: 'bold' },
+    alternateRowStyles: { fillColor: hellgrau },
+    theme: 'grid'
+  });
+
+  // Summen
+  var finalY = doc.lastAutoTable.finalY + 8;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(...blau);
+  doc.text('Zusammenfassung', rand, finalY); finalY += 5;
+  doc.setLineWidth(0.3);
+  doc.line(rand, finalY, W-rand, finalY); finalY += 5;
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(0,0,0);
+  doc.setFontSize(9);
   var sumSp = ee.reduce(function(a,e){return a+(e.speisen||0);},0);
   var sumGt = ee.reduce(function(a,e){return a+(e.getraenke||0);},0);
-  var mb2 = ee.filter(function(e){return e.betrag;});
-  var bonTxt = mb2.length?(mb2.reduce(function(a,e){return a+e.betrag;},0)/mb2.length).toFixed(2)+' €':'–';
-  var kphTxt = '';
-  if(s.startzeit&&s.endzeit){
-    var a2=s.startzeit.split(':').map(Number),b2=s.endzeit.split(':').map(Number);
-    var min2=(b2[0]*60+b2[1])-(a2[0]*60+a2[1]);
-    if(min2>0) kphTxt = Math.round(sumK/min2*60)+' Kunden/Std.';
-  }
-  h += '<div class="pdf-summe">';
-  h += '<span>Kunden: '+sumK+'</span>';
-  if(sumSp) h += '<span>Speisen: '+sumSp+'</span>';
-  if(sumGt) h += '<span>Getränke: '+sumGt+'</span>';
-  h += '<span>Ø Bon: '+bonTxt+'</span>';
-  if(kphTxt) h += '<span>'+kphTxt+'</span>';
-  h += '</div></div>';
+  var bonTxt = mb.length?(mb.reduce(function(a,e){return a+e.betrag;},0)/mb.length).toFixed(2)+' €':'–';
+  doc.text('Kunden gesamt: ' + sumK, rand, finalY); finalY += 5;
+  if (sumSp) { doc.text('Speisen: ' + sumSp, rand, finalY); finalY += 5; }
+  if (sumGt) { doc.text('Getränke: ' + sumGt, rand, finalY); finalY += 5; }
+  doc.text('Ø Bon: ' + bonTxt, rand, finalY);
 
-  document.getElementById('pdf-view').innerHTML = h;
-  window.print();
+  // Download
+  doc.save('Testinator_' + s.datum.replace(/\./g,'-') + '.pdf');
 }
 
 function doKopieren() {
